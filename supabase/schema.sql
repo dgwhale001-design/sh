@@ -47,12 +47,27 @@ create table if not exists public.learning_records (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.book_vendors (
+  id text primary key,
+  name text not null,
+  manager text not null,
+  phone text not null,
+  order_method text not null default '',
+  payment_method text not null default '',
+  settlement_day text not null default '',
+  memo text not null default '',
+  status text not null default '거래중' check (status in ('거래중', '거래중지')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 -- 기존 MVP 가상 명단은 보존하되 운영 화면에서는 제외합니다.
 update public.students set is_demo = true where id < 10000;
 
 alter table public.students enable row level security;
 alter table public.attendance enable row level security;
 alter table public.learning_records enable row level security;
+alter table public.book_vendors enable row level security;
 
 drop policy if exists "demo students read" on public.students;
 drop policy if exists "demo students write" on public.students;
@@ -63,6 +78,7 @@ drop policy if exists "demo records write" on public.learning_records;
 drop policy if exists "admin students" on public.students;
 drop policy if exists "admin attendance" on public.attendance;
 drop policy if exists "admin learning records" on public.learning_records;
+drop policy if exists "admin book vendors" on public.book_vendors;
 
 create policy "admin students" on public.students
   for all to authenticated
@@ -79,10 +95,17 @@ create policy "admin learning records" on public.learning_records
   using (lower(coalesce(auth.jwt() ->> 'email', '')) = 'dgwhale001@gmail.com')
   with check (lower(coalesce(auth.jwt() ->> 'email', '')) = 'dgwhale001@gmail.com');
 
+create policy "admin book vendors" on public.book_vendors
+  for all to authenticated
+  using (lower(coalesce(auth.jwt() ->> 'email', '')) = 'dgwhale001@gmail.com')
+  with check (lower(coalesce(auth.jwt() ->> 'email', '')) = 'dgwhale001@gmail.com');
+
 revoke all on public.students from anon;
 revoke all on public.attendance from anon;
 revoke all on public.learning_records from anon;
+revoke all on public.book_vendors from anon;
 grant usage on schema public to authenticated;
 grant select, insert, update, delete on public.students to authenticated;
 grant select, insert, update, delete on public.attendance to authenticated;
 grant select, insert, update, delete on public.learning_records to authenticated;
+grant select, insert, update, delete on public.book_vendors to authenticated;
