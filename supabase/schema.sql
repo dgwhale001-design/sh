@@ -1,5 +1,33 @@
 -- 고래영어 · 이든수학 운영용 Supabase 스키마
--- 관리자 이메일 인증 후에만 학생 개인정보와 운영 기록에 접근할 수 있습니다.
+-- 관리자는 전체 운영정보에, 승인된 강사는 학습·상담 공유정보에만 접근합니다.
+
+create table if not exists public.app_users (
+  email text primary key,
+  display_name text not null default '',
+  role text not null check (role in ('admin', 'teacher')),
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+insert into public.app_users (email, display_name, role, active)
+values ('dgwhale001@gmail.com', '원장', 'admin', true)
+on conflict (email) do update
+set role = 'admin', active = true, updated_at = now();
+
+create or replace function public.current_app_role()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select role
+  from public.app_users
+  where lower(email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+    and active = true
+  limit 1
+$$;
 
 create table if not exists public.students (
   id bigint primary key,
@@ -83,6 +111,21 @@ create table if not exists public.weekly_parent_feedback (
   unique (student_id, week_start)
 );
 
+create table if not exists public.consultations (
+  id text primary key,
+  student_id bigint references public.students(id) on delete set null,
+  student_name text not null,
+  consultation_date date not null,
+  consultation_type text not null check (consultation_type in ('admission', 'growth', 'special')),
+  manager text not null default '',
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists consultations_student_date_idx
+  on public.consultations (student_id, consultation_date desc);
+
 create index if not exists weekly_parent_feedback_student_week_idx
   on public.weekly_parent_feedback (student_id, week_start desc);
 
@@ -94,6 +137,8 @@ alter table public.attendance enable row level security;
 alter table public.learning_records enable row level security;
 alter table public.book_vendors enable row level security;
 alter table public.weekly_parent_feedback enable row level security;
+alter table public.consultations enable row level security;
+alter table public.app_users enable row level security;
 
 drop policy if exists "demo students read" on public.students;
 drop policy if exists "demo students write" on public.students;
@@ -106,40 +151,89 @@ drop policy if exists "admin attendance" on public.attendance;
 drop policy if exists "admin learning records" on public.learning_records;
 drop policy if exists "admin book vendors" on public.book_vendors;
 drop policy if exists "admin weekly parent feedback" on public.weekly_parent_feedback;
+drop policy if exists "shared learning records" on public.learning_records;
+drop policy if exists "shared weekly parent feedback" on public.weekly_parent_feedback;
+drop policy if exists "shared consultations" on public.consultations;
+drop policy if exists "own app profile" on public.app_users;
+drop policy if exists "admin app users" on public.app_users;
 
 create policy "admin students" on public.students
   for all to authenticated
-  using (lower(coalesce(auth.jwt() ->> 'email', '')) = 'dgwhale001@gmail.com')
-  with check (lower(coalesce(auth.jwt() ->> 'email', '')) = 'dgwhale001@gmail.com');
+  using (public.current_app_role() = 'admin')
+  with check (public.current_app_role() = 'admin');
 
 create policy "admin attendance" on public.attendance
   for all to authenticated
-  using (lower(coalesce(auth.jwt() ->> 'email', '')) = 'dgwhale001@gmail.com')
-  with check (lower(coalesce(auth.jwt() ->> 'email', '')) = 'dgwhale001@gmail.com');
+  using (public.current_app_role() = 'admin')
+  with check (public.current_app_role() = 'admin');
 
-create policy "admin learning records" on public.learning_records
+create policy "shared learning records" on public.learning_records
   for all to authenticated
-  using (lower(coalesce(auth.jwt() ->> 'email', '')) = 'dgwhale001@gmail.com')
-  with check (lower(coalesce(auth.jwt() ->> 'email', '')) = 'dgwhale001@gmail.com');
+  using (public.current_app_role() in ('admin', 'teacher'))
+  with check (public.current_app_role() in ('admin', 'teacher'));
 
 create policy "admin book vendors" on public.book_vendors
   for all to authenticated
-  using (lower(coalesce(auth.jwt() ->> 'email', '')) = 'dgwhale001@gmail.com')
-  with check (lower(coalesce(auth.jwt() ->> 'email', '')) = 'dgwhale001@gmail.com');
+  using (public.current_app_role() = 'admin')
+  with check (public.current_app_role() = 'admin');
 
-create policy "admin weekly parent feedback" on public.weekly_parent_feedback
+create policy "shared weekly parent feedback" on public.weekly_parent_feedback
   for all to authenticated
-  using (lower(coalesce(auth.jwt() ->> 'email', '')) = 'dgwhale001@gmail.com')
-  with check (lower(coalesce(auth.jwt() ->> 'email', '')) = 'dgwhale001@gmail.com');
+  using (public.current_app_role() in ('admin', 'teacher'))
+  with check (public.current_app_role() in ('admin', 'teacher'));
+
+create policy "shared consultations" on public.consultations
+  for all to authenticated
+  using (public.current_app_role() in ('admin', 'teacher'))
+  with check (public.current_app_role() in ('admin', 'teacher'));
+
+create policy "own app profile" on public.app_users
+  for select to authenticated
+  using (lower(email) = lower(coalesce(auth.jwt() ->> 'email', '')));
+
+create policy "admin app users" on public.app_users
+  for all to authenticated
+  using (public.current_app_role() = 'admin')
+  with check (public.current_app_role() = 'admin');
+
+create or replace function public.get_learning_students()
+returns table (
+  id bigint,
+  name text,
+  school_level text,
+  grade integer,
+  class_name text,
+  subjects text,
+  status text
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select s.id, s.name, s.school_level, s.grade, s.class_name, s.subjects, s.status
+  from public.students s
+  where public.current_app_role() in ('admin', 'teacher')
+    and s.is_demo = false
+  order by s.name
+$$;
 
 revoke all on public.students from anon;
 revoke all on public.attendance from anon;
 revoke all on public.learning_records from anon;
 revoke all on public.book_vendors from anon;
 revoke all on public.weekly_parent_feedback from anon;
+revoke all on public.consultations from anon;
+revoke all on public.app_users from anon;
+revoke all on function public.current_app_role() from public, anon;
+revoke all on function public.get_learning_students() from public, anon;
 grant usage on schema public to authenticated;
 grant select, insert, update, delete on public.students to authenticated;
 grant select, insert, update, delete on public.attendance to authenticated;
 grant select, insert, update, delete on public.learning_records to authenticated;
 grant select, insert, update, delete on public.book_vendors to authenticated;
 grant select, insert, update, delete on public.weekly_parent_feedback to authenticated;
+grant select, insert, update, delete on public.consultations to authenticated;
+grant select, insert, update, delete on public.app_users to authenticated;
+grant execute on function public.current_app_role() to authenticated;
+grant execute on function public.get_learning_students() to authenticated;
