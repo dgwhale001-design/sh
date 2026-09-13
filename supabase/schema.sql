@@ -61,6 +61,31 @@ create table if not exists public.book_vendors (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.weekly_parent_feedback (
+  id text primary key,
+  student_id bigint not null references public.students(id) on delete cascade,
+  week_start date not null,
+  week_end date not null,
+  subject text not null default '영어·수학',
+  learning_stage text not null default '',
+  learning_content text not null,
+  score_info text not null default '',
+  homework_status text not null default '',
+  engagement text not null default '',
+  learning_attitude text not null default '',
+  next_progress text not null default '',
+  teacher text not null default '',
+  parent_message text not null,
+  prepared_at timestamptz,
+  sent_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (student_id, week_start)
+);
+
+create index if not exists weekly_parent_feedback_student_week_idx
+  on public.weekly_parent_feedback (student_id, week_start desc);
+
 -- 기존 MVP 가상 명단은 보존하되 운영 화면에서는 제외합니다.
 update public.students set is_demo = true where id < 10000;
 
@@ -68,6 +93,7 @@ alter table public.students enable row level security;
 alter table public.attendance enable row level security;
 alter table public.learning_records enable row level security;
 alter table public.book_vendors enable row level security;
+alter table public.weekly_parent_feedback enable row level security;
 
 drop policy if exists "demo students read" on public.students;
 drop policy if exists "demo students write" on public.students;
@@ -79,6 +105,7 @@ drop policy if exists "admin students" on public.students;
 drop policy if exists "admin attendance" on public.attendance;
 drop policy if exists "admin learning records" on public.learning_records;
 drop policy if exists "admin book vendors" on public.book_vendors;
+drop policy if exists "admin weekly parent feedback" on public.weekly_parent_feedback;
 
 create policy "admin students" on public.students
   for all to authenticated
@@ -100,12 +127,19 @@ create policy "admin book vendors" on public.book_vendors
   using (lower(coalesce(auth.jwt() ->> 'email', '')) = 'dgwhale001@gmail.com')
   with check (lower(coalesce(auth.jwt() ->> 'email', '')) = 'dgwhale001@gmail.com');
 
+create policy "admin weekly parent feedback" on public.weekly_parent_feedback
+  for all to authenticated
+  using (lower(coalesce(auth.jwt() ->> 'email', '')) = 'dgwhale001@gmail.com')
+  with check (lower(coalesce(auth.jwt() ->> 'email', '')) = 'dgwhale001@gmail.com');
+
 revoke all on public.students from anon;
 revoke all on public.attendance from anon;
 revoke all on public.learning_records from anon;
 revoke all on public.book_vendors from anon;
+revoke all on public.weekly_parent_feedback from anon;
 grant usage on schema public to authenticated;
 grant select, insert, update, delete on public.students to authenticated;
 grant select, insert, update, delete on public.attendance to authenticated;
 grant select, insert, update, delete on public.learning_records to authenticated;
 grant select, insert, update, delete on public.book_vendors to authenticated;
+grant select, insert, update, delete on public.weekly_parent_feedback to authenticated;
