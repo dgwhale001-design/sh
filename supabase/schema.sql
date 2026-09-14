@@ -56,6 +56,19 @@ alter table public.students add column if not exists notes text not null default
 alter table public.students add column if not exists is_demo boolean not null default false;
 alter table public.students add column if not exists updated_at timestamptz not null default now();
 
+create table if not exists public.academy_classes (
+  id text primary key,
+  name text not null unique,
+  school_level text not null default '초등' check (school_level in ('초등', '중등')),
+  grade integer not null check (grade between 1 and 6),
+  subject text not null default '영어·수학',
+  monthly_tuition integer not null default 0 check (monthly_tuition >= 0),
+  features text not null default '',
+  status text not null default '운영중' check (status in ('운영중', '운영종료')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.attendance (
   student_id bigint not null references public.students(id) on delete cascade,
   attendance_date date not null default current_date,
@@ -133,6 +146,7 @@ create index if not exists weekly_parent_feedback_student_week_idx
 update public.students set is_demo = true where id < 10000;
 
 alter table public.students enable row level security;
+alter table public.academy_classes enable row level security;
 alter table public.attendance enable row level security;
 alter table public.learning_records enable row level security;
 alter table public.book_vendors enable row level security;
@@ -147,6 +161,7 @@ drop policy if exists "demo attendance write" on public.attendance;
 drop policy if exists "demo records read" on public.learning_records;
 drop policy if exists "demo records write" on public.learning_records;
 drop policy if exists "admin students" on public.students;
+drop policy if exists "admin academy classes" on public.academy_classes;
 drop policy if exists "admin attendance" on public.attendance;
 drop policy if exists "admin learning records" on public.learning_records;
 drop policy if exists "admin book vendors" on public.book_vendors;
@@ -158,6 +173,11 @@ drop policy if exists "own app profile" on public.app_users;
 drop policy if exists "admin app users" on public.app_users;
 
 create policy "admin students" on public.students
+  for all to authenticated
+  using (public.current_app_role() = 'admin')
+  with check (public.current_app_role() = 'admin');
+
+create policy "admin academy classes" on public.academy_classes
   for all to authenticated
   using (public.current_app_role() = 'admin')
   with check (public.current_app_role() = 'admin');
@@ -219,6 +239,7 @@ as $$
 $$;
 
 revoke all on public.students from anon;
+revoke all on public.academy_classes from anon;
 revoke all on public.attendance from anon;
 revoke all on public.learning_records from anon;
 revoke all on public.book_vendors from anon;
@@ -229,6 +250,7 @@ revoke all on function public.current_app_role() from public, anon;
 revoke all on function public.get_learning_students() from public, anon;
 grant usage on schema public to authenticated;
 grant select, insert, update, delete on public.students to authenticated;
+grant select, insert, update, delete on public.academy_classes to authenticated;
 grant select, insert, update, delete on public.attendance to authenticated;
 grant select, insert, update, delete on public.learning_records to authenticated;
 grant select, insert, update, delete on public.book_vendors to authenticated;
