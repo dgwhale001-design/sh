@@ -124,6 +124,17 @@ create table if not exists public.weekly_parent_feedback (
   unique (student_id, week_start)
 );
 
+create table if not exists public.monthly_parent_feedback (
+  id text primary key,
+  student_id bigint not null references public.students(id) on delete cascade,
+  report_month text not null check (report_month ~ '^\d{4}-\d{2}$'),
+  teacher text not null default '',
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (student_id, report_month)
+);
+
 create table if not exists public.consultations (
   id text primary key,
   student_id bigint references public.students(id) on delete set null,
@@ -142,6 +153,9 @@ create index if not exists consultations_student_date_idx
 create index if not exists weekly_parent_feedback_student_week_idx
   on public.weekly_parent_feedback (student_id, week_start desc);
 
+create index if not exists monthly_parent_feedback_student_month_idx
+  on public.monthly_parent_feedback (student_id, report_month desc);
+
 -- 기존 MVP 가상 명단은 보존하되 운영 화면에서는 제외합니다.
 update public.students set is_demo = true where id < 10000;
 
@@ -151,6 +165,7 @@ alter table public.attendance enable row level security;
 alter table public.learning_records enable row level security;
 alter table public.book_vendors enable row level security;
 alter table public.weekly_parent_feedback enable row level security;
+alter table public.monthly_parent_feedback enable row level security;
 alter table public.consultations enable row level security;
 alter table public.app_users enable row level security;
 
@@ -168,6 +183,7 @@ drop policy if exists "admin book vendors" on public.book_vendors;
 drop policy if exists "admin weekly parent feedback" on public.weekly_parent_feedback;
 drop policy if exists "shared learning records" on public.learning_records;
 drop policy if exists "shared weekly parent feedback" on public.weekly_parent_feedback;
+drop policy if exists "shared monthly parent feedback" on public.monthly_parent_feedback;
 drop policy if exists "shared consultations" on public.consultations;
 drop policy if exists "own app profile" on public.app_users;
 drop policy if exists "admin app users" on public.app_users;
@@ -198,6 +214,11 @@ create policy "admin book vendors" on public.book_vendors
   with check (public.current_app_role() = 'admin');
 
 create policy "shared weekly parent feedback" on public.weekly_parent_feedback
+  for all to authenticated
+  using (public.current_app_role() in ('admin', 'teacher'))
+  with check (public.current_app_role() in ('admin', 'teacher'));
+
+create policy "shared monthly parent feedback" on public.monthly_parent_feedback
   for all to authenticated
   using (public.current_app_role() in ('admin', 'teacher'))
   with check (public.current_app_role() in ('admin', 'teacher'));
@@ -244,6 +265,7 @@ revoke all on public.attendance from anon;
 revoke all on public.learning_records from anon;
 revoke all on public.book_vendors from anon;
 revoke all on public.weekly_parent_feedback from anon;
+revoke all on public.monthly_parent_feedback from anon;
 revoke all on public.consultations from anon;
 revoke all on public.app_users from anon;
 revoke all on function public.current_app_role() from public, anon;
@@ -255,6 +277,7 @@ grant select, insert, update, delete on public.attendance to authenticated;
 grant select, insert, update, delete on public.learning_records to authenticated;
 grant select, insert, update, delete on public.book_vendors to authenticated;
 grant select, insert, update, delete on public.weekly_parent_feedback to authenticated;
+grant select, insert, update, delete on public.monthly_parent_feedback to authenticated;
 grant select, insert, update, delete on public.consultations to authenticated;
 grant select, insert, update, delete on public.app_users to authenticated;
 grant execute on function public.current_app_role() to authenticated;
