@@ -76,6 +76,7 @@
     document.getElementById('special-current-week').textContent=elapsed<1?'시작 전':week+'주차';
     document.getElementById('special-period-label').textContent=program.startDate.replaceAll('-','.')+' 시작 · 총 '+program.totalWeeks+'주';
     document.getElementById('special-progress-bar').style.width=progress+'%';
+    document.getElementById('special-add-student').hidden=currentUserRole!=='admin';
   }
 
   function populateSpecialSelects(){
@@ -234,6 +235,7 @@
 
   function switchSpecialTab(tab){specialTab=tab;renderSpecial()}
   document.querySelectorAll('[data-special-tab]').forEach(function(button){button.onclick=function(){switchSpecialTab(button.dataset.specialTab)}});
+  document.getElementById('special-add-student').onclick=function(){openStudentDialog()};
   document.getElementById('special-save-evaluations').onclick=saveEvaluations;
   document.getElementById('special-clinic-filter').onchange=renderClinicList;
   document.getElementById('special-history-student').onchange=renderHistory;
